@@ -17,6 +17,9 @@ func init() {
 	generators[LIMIT] = _limit
 	generators[WHERE] = _where
 	generators[ORDERBY] = _orderBy
+	generators[UPDATE] = _update
+	generators[DELETE] = _delete
+	generators[COUNT] = _count
 }
 
 func genBindVars(num int) string {
@@ -75,4 +78,27 @@ func _where(values ...interface{}) (string, []interface{}) {
 
 func _orderBy(values ...interface{}) (string, []interface{}) {
 	return fmt.Sprintf("ORDER BY %s", values[0]), []interface{}{}
+}
+
+func _update(values ...interface{}) (string, []interface{}) {
+	// UPDATE $tableName SET $field1 = ?, $field2 = ?, ...
+	tableName := values[0]
+	m := values[1].(map[string]interface{})
+	var keys []string
+	var vars []interface{}
+	for key, value := range m {
+		keys = append(keys, key+" = ?")
+		vars = append(vars, value)
+	}
+	return fmt.Sprintf("UPDATE %s SET %v", tableName, strings.Join(keys, ", ")), vars
+}
+
+func _delete(values ...interface{}) (string, []interface{}) {
+	// DELETE FROM $tableName
+	return fmt.Sprintf("DELETE FROM %s", values[0]), []interface{}{}
+}
+
+func _count(values ...interface{}) (string, []interface{}) {
+	// SELECT COUNT(*) FROM $tableName
+	return _select(values[0], []string{"count(*)"})
 }

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"reflect"
 
 	"github.com/Whitea029/easy-orm/clause"
@@ -33,7 +34,7 @@ func (s *Session) Find(values interface{}) error {
 
 	// set the SELECT clause
 	s.clause.Set(clause.SELECT, table.Name, table.FieldNames)
-	sql, vars := s.clause.Build(clause.SELECT)
+	sql, vars := s.clause.Build(clause.SELECT, clause.WHERE, clause.ORDERBY, clause.LIMIT)
 
 	// execute the query
 	rows, err := s.Raw(sql, vars...).QueryRows()
@@ -54,4 +55,84 @@ func (s *Session) Find(values interface{}) error {
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
 	return rows.Close()
+}
+
+// support map[string]interface{}
+// also support kv list: "Name", "Tom", "Age", 18, ....
+func (s *Session) Update(kvs ...interface{}) (int64, error) {
+	m, ok := kvs[0].(map[string]interface{})
+	if !ok {
+		m = make(map[string]interface{})
+		for i := 0; i < len(kvs); i += 2 {
+			m[kvs[i].(string)] = kvs[i+1]
+		}
+	}
+	s.clause.Set(clause.UPDATE, s.RefTable().Name, m)
+	sql, vars := s.clause.Build(clause.UPDATE, clause.WHERE)
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// delete from $tableName where $condition
+func (s *Session) Delete() (int64, error) {
+	s.clause.Set(clause.DELETE, s.RefTable().Name)
+	sql, vars := s.clause.Build(clause.DELETE, clause.WHERE)
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// count the number of rows
+func (s *Session) Count() (int64, error) {
+	s.clause.Set(clause.COUNT, s.RefTable().Name)
+	sql, vars := s.clause.Build(clause.COUNT)
+	rows, err := s.Raw(sql, vars...).QueryRows()
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	for rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return 0, err
+		}
+	}
+	return count, nil
+}
+
+// set the WHERE clause
+func (s *Session) Where(desc string, args ...interface{}) *Session {
+	var vars []interface{}
+	s.clause.Set(clause.WHERE, append(append(vars, desc), args...)...)
+	return s
+}
+
+// Limit adds limit condition to clause
+func (s *Session) Limit(num int) *Session {
+	s.clause.Set(clause.LIMIT, num)
+	return s
+}
+
+// set the ORDER BY clause
+func (s *Session) OrderBy(desc string) *Session {
+	s.clause.Set(clause.ORDERBY, desc)
+	return s
+}
+
+// get the first record
+func (s *Session) First(value interface{}) error {
+	dest := reflect.Indirect(reflect.ValueOf(value))
+	destSlice := reflect.New(reflect.SliceOf(dest.Type())).Elem()
+	if err := s.Limit(1).Find(destSlice.Addr().Interface()); err != nil {
+		return err
+	}
+	if destSlice.Len() == 0 {
+		return errors.New("NOT FOUND")
+	}
+	dest.Set(destSlice.Index(0))
+	return nil
 }
