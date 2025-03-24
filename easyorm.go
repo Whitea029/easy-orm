@@ -33,6 +33,28 @@ func NewEngine(driver, source string) (e *Engine, err error) {
 	return
 }
 
+type TxFunc func(*session.Session) (interface{}, error)
+
+// Transaction runs a function in a transaction
+func (engine *Engine) Transaction(f TxFunc) (result interface{}, err error) {
+	s := engine.NewSession()
+	if err := s.Begin(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = s.Rollback()
+			panic(p) // re-throw panic after Rollback
+		} else if err != nil {
+			_ = s.Rollback() // err is non-nil; don't change it
+		} else {
+			err = s.Commit() // err is nil; if Commit returns error update err
+		}
+	}()
+
+	return f(s)
+}
+
 func (e *Engine) Close() {
 	if err := e.db.Close(); err != nil {
 		log.Errorf("Failed to close database: %s", err)
